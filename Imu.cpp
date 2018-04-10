@@ -59,3 +59,4 @@ void Imu::updateValues(Data& data)
     data.setRollAngle(roll);
     data.setPitchAngle(pitchValue);
 }
+

@@ -2,7 +2,6 @@
 
 Data::Data()
 {
-    timeStamp = 0;
     heading = 0;
     rateOfTurn = 0;
     rollAngle = 0;
@@ -14,11 +13,6 @@ Data::~Data()
 
 }
 
-//getters
-unsigned long Data::getTimeStamp()
-{
-    return timeStamp;
-}
 unsigned int  Data::getHeading()
 {
     return heading;
@@ -34,11 +28,6 @@ float  Data::getRollAngle()
 float  Data::getPitchAngle()
 {
     return pitchAngle;
-}
-//setters
-void Data::setTimeStamp()
-{
-    timeStamp = millis();
 }
 void Data::setHeading(unsigned int headingValue)
 {
@@ -56,3 +45,4 @@ void Data::setPitchAngle(float pitchAngleValue)
 {
     pitchAngle = pitchAngleValue;
 }
+

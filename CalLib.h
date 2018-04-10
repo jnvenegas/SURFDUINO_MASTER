@@ -56,3 +56,4 @@ void calLibWrite(byte device, CALLIB_DATA * calData);
 boolean calLibRead(byte device, CALLIB_DATA * calData);
 
 #endif // _CALLIB_H_
+

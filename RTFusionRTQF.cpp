@@ -233,3 +233,4 @@ void RTFusionRTQF::calculatePose(const RTVector3& accel, const RTVector3& mag)
     }
 }
 #endif // #ifndef RTARDULINK_MODE
+

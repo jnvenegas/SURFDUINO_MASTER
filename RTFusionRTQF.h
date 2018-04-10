@@ -99,3 +99,4 @@ private:
 #endif // #ifndef RTARDULINK_MODE
 
 #endif // _RTFUSIONRTQF_H
+

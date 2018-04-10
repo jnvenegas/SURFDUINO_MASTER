@@ -57,7 +57,7 @@ boolean calLibRead(byte device, CALLIB_DATA *calData)
 
 // AVR and SAMD version
 #ifdef ARDUINO_ARCH_SAMD
-#include "SD.h"
+//#include "SD.h"
 #else
 #include <EEPROM.h>
 #endif
@@ -100,3 +100,4 @@ boolean calLibRead(byte device, CALLIB_DATA *calData)
   return false;  
 }
 #endif
+

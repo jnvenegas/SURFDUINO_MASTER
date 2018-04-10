@@ -16,3 +16,4 @@ struct SlaveDataStruct
     boolean isGpsLocked;
 };
 #endif
+

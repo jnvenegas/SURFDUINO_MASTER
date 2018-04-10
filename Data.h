@@ -6,9 +6,7 @@
 class Data{
 
     private:
-
-    //timestamp
-    uint16_t timeStamp;
+    
     //board orientation
     unsigned int heading;
     float rateOfTurn;
@@ -21,14 +19,12 @@ class Data{
     ~Data();
 
     //getters
-    unsigned long getTimeStamp();
     float getRateOfTurn();
     float getRollAngle();
     float getPitchAngle();
     unsigned int getHeading();
 
     //setters
-    void setTimeStamp();
     void setRateOfTurn(float rateOfTurnValue);
     void setRollAngle(float rollAngleValue);
     void setPitchAngle(float pitchAngleValue);
@@ -36,3 +32,4 @@ class Data{
 };
 
 #endif
+
