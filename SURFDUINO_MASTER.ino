@@ -3,13 +3,14 @@
 #include "Imu.h"
 #include "SlaveData.h"
 #include "Data.h"
+#include "BleDelegate.h"
 
 //size of i2c packet
 #define SIZE_SLV_DATA 28
 //equivalent size in SAMD M0 adalogger chip
-#define SIZE_SLV_DATA_M0 32
+#define SLV_DATA_OBJ_SZ_M0 32
 //data object size 
-uint8_t DATA_OBJ_SZ_M0 = sizeof(Data);
+uint8_t MST_DATA_OBJ_SZ_M0 = sizeof(Data);
 //buffer objects sizes
 #define BUFFER_SZ 120
 //slave node constants
@@ -19,12 +20,6 @@ uint8_t DATA_OBJ_SZ_M0 = sizeof(Data);
 //we trigger logging above this speed
 #define LOGGING_SPEED 5
 
-//BLE commands
-static const char BLE_SAVE_DATA_ON  = 'O';
-static const char BLE_SAVE_DATA_OFF = 'F';
-static const char BLE_SYS_STATUS    = 'S';
-static const char BLE_STATS_REPORT  = 'R';
-
 //data from slave
 SlaveDataStruct slvData;
 //file
@@ -33,23 +28,26 @@ File file;
 //but a direct report of the master via I2c)
 Imu imuObj;
 //holds IMU data
-Data dataObj;
+Data mstDataObj;
+//processes BLE commands
+BleDelegate bleHelper;
 //track if we are or were recording data
 bool recordMode = false;
-//create file marker
+//create sd file flag
 bool setFileName = true;
-//file name variable
+//sd file name variable
 String fileName;
-//how many times we trigger recording
+//how many times we have triggered recording
 uint8_t instancesOfRecording = 0;
-//controls whether we save data or not
+//controls whether we save data (take and actions on the SD card) or not
 bool saveDataOn = false;
-//track when to request slave data as it only changes every second
+//track when to request slave data as it only changes every second due to 1hz gps
 unsigned int lastRequestMillis = millis();
-
-//buffers and related index
-Data dataObjBuffer[BUFFER_SZ];
-SlaveDataStruct slaveDataBuffer[BUFFER_SZ];
+//master data buffer
+Data mstDataObjBuffer[BUFFER_SZ];
+//slave data buffer
+SlaveDataStruct slvDataBuffer[BUFFER_SZ];
+//current buffer element
 uint8_t bufferIdx = 0;
 
                         //******************************
@@ -66,15 +64,18 @@ void writeBuffersToSD()
         file = SD.open(fileName, FILE_WRITE);
         while(saveBufferIdx < bufferIdx)
         {
+            bleHelper.inspectData(mstDataObjBuffer[saveBufferIdx], 
+            slvDataBuffer[saveBufferIdx], instancesOfRecording);
+            
             file.print(instancesOfRecording);file.print(",");
-            file.print(slaveDataBuffer[saveBufferIdx].timeString);file.print(",");
-            file.print(slaveDataBuffer[saveBufferIdx].mph,4);file.print(",");
-            file.print(dataObjBuffer[saveBufferIdx].getHeading());file.print(",");
-            file.print(dataObjBuffer[saveBufferIdx].getRateOfTurn(),4);file.print(",");
-            file.print(dataObjBuffer[saveBufferIdx].getPitchAngle(),4);file.print(",");
-            file.print(dataObjBuffer[saveBufferIdx].getRollAngle(),4);file.print(",");
-            file.print(slaveDataBuffer[saveBufferIdx].latitude,4);file.print(",");
-            file.print(slaveDataBuffer[saveBufferIdx].longitude,4);file.println();
+            file.print(slvDataBuffer[saveBufferIdx].timeString);file.print(",");
+            file.print(slvDataBuffer[saveBufferIdx].mph,4);file.print(",");
+            file.print(mstDataObjBuffer[saveBufferIdx].getHeading());file.print(",");
+            file.print(mstDataObjBuffer[saveBufferIdx].getRateOfTurn(),4);file.print(",");
+            file.print(mstDataObjBuffer[saveBufferIdx].getPitchAngle(),4);file.print(",");
+            file.print(mstDataObjBuffer[saveBufferIdx].getRollAngle(),4);file.print(",");
+            file.print(slvDataBuffer[saveBufferIdx].latitude,4);file.print(",");
+            file.print(slvDataBuffer[saveBufferIdx].longitude,4);file.println();
             saveBufferIdx++;
         }
         file.close();     
@@ -98,68 +99,6 @@ void createSDFile()
         file.println("record_id,utc_time,mph,bearing,turn_rate,pitch_angle,roll_angle,latitude,longitude");
         file.close();
     }
-}
-
-//BLE command actions
-void processBleCommand()
-{
-  if(slvData.bleCmd == BLE_SAVE_DATA_ON)
-  {
-      saveDataOn = true;
-      Wire.beginTransmission(I2C_SLAVE_ADDRESS);
-      Wire.write("OK");
-      uint8_t e =Wire.endTransmission();
-  }
-  else if(slvData.bleCmd == BLE_SAVE_DATA_OFF)
-  {
-      saveDataOn = false;
-      Wire.beginTransmission(I2C_SLAVE_ADDRESS);
-      Wire.write("OK");
-      uint8_t e = Wire.endTransmission();
-  }
-  else if(slvData.bleCmd == BLE_SYS_STATUS)
-  {
-      //prepare to send
-      Wire.beginTransmission(I2C_SLAVE_ADDRESS);
-  
-      //--------------------
-      //   record mode
-      //--------------------
-      Wire.write("RECORDING:");
-      if(saveDataOn)
-          Wire.write("ON");
-      else
-          Wire.write("OFF");
-      Wire.write(",BATTERY:");
-      //--------------------
-      //   power
-      //--------------------
-      float measuredvbat = analogRead(A7);
-      measuredvbat *= 2;    // we divided by 2, so multiply back
-      measuredvbat *= 3.3;  // Multiply by 3.3V, our reference voltage
-      measuredvbat /= 1024; // convert to voltage
-      if(measuredvbat< 3.7)
-          Wire.write("LOW");
-      else
-          Wire.write("OK");
-      //--------------------
-      //   gps lock
-      //--------------------
-      Wire.write(",GPS:");
-      if(slvData.isGpsLocked)
-          Wire.write("LOCK");
-      else
-          Wire.write("SEEK");
-  
-      //send data
-      Wire.endTransmission();     
-  }
-  else if(slvData.bleCmd == BLE_STATS_REPORT)
-  {
-  
-                            
-  }
-  slvData.bleCmd = '*';
 }
 
 //runs once
@@ -203,7 +142,7 @@ void loop() {
       
       //request data
       uint8_t bytes =  Wire.requestFrom(I2C_SLAVE_ADDRESS, SIZE_SLV_DATA);
-      uint8_t i2cBuffer[SIZE_SLV_DATA_M0];
+      uint8_t i2cBuffer[SLV_DATA_OBJ_SZ_M0];
       uint8_t i2cBufferIdx = 0;
 
       //get GPS and BLE data from slave node
@@ -231,7 +170,7 @@ void loop() {
     }
 
     //read/update from the imu
-    imuObj.updateValues(dataObj);   
+    imuObj.updateValues(mstDataObj);   
 
     //create SD file (runs once - when gps is locked and when recording is turned on)     
     createSDFile();
@@ -254,8 +193,8 @@ void loop() {
                             //***********************************
         
         //copy iteration data to buffer
-        memcpy(&dataObjBuffer[bufferIdx],&dataObj,DATA_OBJ_SZ_M0);
-        memcpy(&slaveDataBuffer[bufferIdx],&slvData,SIZE_SLV_DATA_M0);
+        memcpy(&mstDataObjBuffer[bufferIdx],&mstDataObj,MST_DATA_OBJ_SZ_M0);
+        memcpy(&slvDataBuffer[bufferIdx],&slvData,SLV_DATA_OBJ_SZ_M0);
         bufferIdx++;
 
         //write buffers to SD if we have filled them
@@ -278,8 +217,7 @@ void loop() {
     else
     { 
         //if nothing is happening process a ble command
-        //process ble commands
-        processBleCommand(); 
+        bleHelper.processCommand(I2C_SLAVE_ADDRESS, slvData, saveDataOn);
     }
     
     //0.2 second delay
